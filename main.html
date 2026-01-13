@@ -316,6 +316,7 @@
             border: 1px solid #e2e8f0;
             cursor: pointer;
             transition: all 0.2s;
+            line-height: 1.1;
         }
 
         /* Modales */
@@ -370,26 +371,37 @@
         }
 
         .pdf-page-wrapper {
-            padding: 40px;
+            padding: 30px;
             background: white;
             width: 794px; /* A4 width */
             min-height: 1123px;
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: 15px;
             overflow: hidden;
             font-family: Arial, sans-serif;
         }
 
         .pdf-header-box {
             border-bottom: 2px solid #e2e8f0;
-            padding-bottom: 15px;
-            margin-bottom: 10px;
+            padding-bottom: 8px;
+            margin-bottom: 5px;
         }
 
-        .pdf-main-title { font-size: 24px; font-weight: 800; color: #111; }
-        .pdf-period-tag { font-size: 14px; color: #64748b; font-weight: 600; }
+        .pdf-main-title { font-size: 20px; font-weight: 800; color: #111; }
+        .pdf-period-tag { font-size: 12px; color: #64748b; font-weight: 600; }
+
+        .pdf-week-block {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            height: 500px; 
+            width: 100%;
+            border-bottom: 1px dashed #cbd5e1;
+            padding-bottom: 10px;
+        }
+        .pdf-week-block:last-child { border-bottom: none; }
     </style>
 </head>
 <body>
@@ -510,6 +522,7 @@
         let currentDate = new Date(); 
         let noonTime = "14:00"; 
         let currentTZ = 1; 
+        let currentCity = "Madrid";
         const selectedSlots = new Set(); 
         let weekPatternClipboard = null; 
         let isMouseDown = false;
@@ -557,7 +570,13 @@
                 const m = (z.offset % 1) * 60;
                 const label = `UTC${z.offset >= 0 ? '+' : ''}${h}${m ? ':30' : ''}`;
                 btn.innerHTML = `<span>${label}</span><span class="city">${z.city}</span>`;
-                btn.onclick = () => { currentTZ = z.offset; render(); toggleTZModal(); showToast(`Zona: ${label}`); };
+                btn.onclick = () => { 
+                    currentTZ = z.offset; 
+                    currentCity = z.city;
+                    render(); 
+                    toggleTZModal(); 
+                    showToast(`Zona: ${label} (${z.city})`); 
+                };
                 grid.appendChild(btn);
             });
         }
@@ -610,6 +629,7 @@
         }
 
         function renderWeekView() {
+            gridElement.innerHTML = '';
             gridElement.className = 'grid-wrapper';
             const monday = getMonday(currentDate);
             const weekDates = Array.from({length:7}, (_, i) => {
@@ -619,7 +639,12 @@
             const corner = document.createElement('div');
             corner.className = 'header-cell border-r bg-gray-50';
             const hTZ = Math.floor(currentTZ), mTZ = (currentTZ % 1) * 60;
-            corner.innerHTML = `<button onclick="toggleTZModal()" class="tz-capsule">UTC${currentTZ >= 0 ? '+' : ''}${hTZ}${mTZ ? ':30' : ''}</button>`;
+            const tzLabel = `UTC${currentTZ >= 0 ? '+' : ''}${hTZ}${mTZ ? ':30' : ''}`;
+            corner.innerHTML = `
+                <button onclick="toggleTZModal()" class="tz-capsule">
+                    ${tzLabel}
+                    <span class="block text-[7px] font-normal opacity-60 uppercase">${currentCity}</span>
+                </button>`;
             gridElement.appendChild(corner);
             weekDates.forEach(date => {
                 const isT = isToday(date);
@@ -671,6 +696,7 @@
         }
 
         function renderMonthView() {
+            gridElement.innerHTML = '';
             gridElement.className = 'month-wrapper';
             const year = currentDate.getFullYear(), month = currentDate.getMonth();
             periodLabel.innerText = currentDate.toLocaleDateString('es-ES', {month: 'long', year: 'numeric'});
@@ -694,8 +720,7 @@
                 for (let h = 0; h < 24; h++) {
                     ['00', '30'].forEach(m => {
                         const time = `${h.toString().padStart(2, '0')}:${m}`;
-                        const slot = document.createElement('div');
-                        slot.className = `mini-slot ${selectedSlots.has(`c-${iso}-${time}`) ? 'active' : 'inactive'} ${h < 7 || h >= 22 ? 'night-slot' : ''}`;
+                        const slot = document.className = `mini-slot ${selectedSlots.has(`c-${iso}-${time}`) ? 'active' : 'inactive'} ${h < 7 || h >= 22 ? 'night-slot' : ''}`;
                         miniSchedule.appendChild(slot);
                     });
                 }
@@ -736,6 +761,18 @@
 
             const hTZ = Math.floor(currentTZ), mTZ = (currentTZ % 1) * 60;
             const tzString = `UTC${currentTZ >= 0 ? '+' : ''}${hTZ}${mTZ ? ':30' : ''}`;
+
+            const getAccWeight = (minutes) => {
+                let acc = 0;
+                let m = minutes;
+                for(let s=0; s<48; s++) { 
+                    let weight = (s < 14 || s >= 44) ? 0.8 : 1.3;
+                    if(m >= 30) { acc += weight; m -= 30; }
+                    else { acc += (m / 30) * weight; m = 0; break; }
+                }
+                return acc;
+            };
+            const totalWeight = (14 * 0.8) + (30 * 1.3) + (4 * 0.8); 
 
             // 1. Páginas de Meses
             for (let i = 0; i < sortedMonths.length; i++) {
@@ -796,87 +833,103 @@
                 }
                 
                 pdfArea.appendChild(page);
-                const canvas = await html2canvas(page, { scale: 2, useCORS: true, logging: false });
+                const canvas = await html2canvas(page, { scale: 3, useCORS: true, logging: false });
                 if (i > 0) doc.addPage();
                 doc.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 210, 297);
                 pdfArea.innerHTML = '';
             }
 
-            // 2. Páginas de Semanas
-            for (let i = 0; i < sortedWeeks.length; i++) {
-                const monStr = sortedWeeks[i];
-                const monDate = new Date(monStr + 'T12:00:00');
-                const sunDate = new Date(monDate); sunDate.setDate(monDate.getDate() + 6);
-                
+            // 2. Páginas de Semanas (2 por cara)
+            for (let i = 0; i < sortedWeeks.length; i += 2) {
                 const page = document.createElement('div');
                 page.className = 'pdf-page-wrapper';
-                page.innerHTML = `
-                    <div class="pdf-header-box">
-                        <div class="pdf-main-title">RendezPlan - Semana</div>
-                        <div class="pdf-period-tag">${monDate.toLocaleDateString('es-ES', {day:'numeric', month:'short'})} - ${sunDate.toLocaleDateString('es-ES', {day:'numeric', month:'short', year:'numeric'})}</div>
-                    </div>
-                `;
-
-                // Añadimos padding-top a la rejilla para que el 00:00 no se corte
-                const weekGrid = document.createElement('div');
-                weekGrid.style.cssText = "display:grid; grid-template-columns:45px repeat(7,1fr); grid-template-rows:40px repeat(48,1fr); flex:1; border:1px solid #eee; border-radius:15px; overflow:hidden; font-size:8px; background:#fff; position:relative; margin-top:5px;";
                 
-                // Corner
-                const corner = document.createElement('div');
-                corner.style.cssText = "display:flex; align-items:center; justify-content:center; background:#f1f5f9; border-bottom:1px solid #ccc; border-right:1px solid #ddd; font-size:9px; font-weight:900; color:#1e293b; font-family:Arial;";
-                corner.innerHTML = `<span style="background:#fff; border:1px solid #e2e8f0; padding:2px 4px; border-radius:10px; font-size:8px;">${tzString}</span>`;
-                weekGrid.appendChild(corner);
+                for (let j = 0; j < 2; j++) {
+                    const index = i + j;
+                    if (index >= sortedWeeks.length) break;
 
-                for(let d=0; d<7; d++){
-                    const dh = document.createElement('div');
-                    const target = new Date(monDate); target.setDate(monDate.getDate() + d);
-                    dh.style.cssText = "text-align:center; font-weight:bold; border-bottom:1px solid #ddd; background:#f8fafc; font-family:Arial; height:40px; display:flex; flex-direction:column; justify-content:center;";
-                    dh.innerHTML = `<span style="font-size:9px; color:#64748b; line-height:14px;">${dayNames[d].substring(0,3)}</span><span style="font-size:12px; color:#1e293b; line-height:16px;">${target.getDate()}</span>`;
-                    weekGrid.appendChild(dh);
+                    const monStr = sortedWeeks[index];
+                    const monDate = new Date(monStr + 'T12:00:00');
+                    const sunDate = new Date(monDate); sunDate.setDate(monDate.getDate() + 6);
+                    
+                    const weekBlock = document.createElement('div');
+                    weekBlock.className = 'pdf-week-block';
+                    weekBlock.innerHTML = `
+                        <div class="pdf-header-box">
+                            <div class="pdf-main-title" style="font-size:16px;">Semana ${index + 1} (${monDate.toLocaleDateString('es-ES', {month:'short'})})</div>
+                            <div class="pdf-period-tag">${monDate.toLocaleDateString('es-ES', {day:'numeric', month:'short'})} - ${sunDate.toLocaleDateString('es-ES', {day:'numeric', month:'short', year:'numeric'})}</div>
+                        </div>
+                    `;
+
+                    const weekGrid = document.createElement('div');
+                    weekGrid.style.cssText = `
+                        display:grid; 
+                        grid-template-columns:35px repeat(7,1fr); 
+                        grid-template-rows:30px repeat(14, 0.8fr) repeat(30, 1.3fr) repeat(4, 0.8fr); 
+                        flex:1; border:1px solid #eee; border-radius:12px; overflow:hidden; font-size:7px; background:#fff; position:relative;
+                    `;
+                    
+                    // Corner (CORRECCIÓN: Fondo blanco y sin línea horizontal)
+                    const corner = document.createElement('div');
+                    corner.style.cssText = "display:flex; align-items:center; justify-content:center; background:#fff; border-bottom:none; border-right:1px solid #ddd; font-family:Arial; line-height:1;";
+                    corner.innerHTML = `
+                        <div style="text-align:center; position:relative; top:-8px;">
+                            <span style="font-size:6px; font-weight:900; display:inline-block; line-height:1;">${tzString}</span>
+                            <div style="margin-top:1px; line-height:1;">
+                                <span style="font-size:5px; opacity:0.8; text-transform:uppercase; letter-spacing:0.02em; font-weight:bold;">${currentCity}</span>
+                            </div>
+                        </div>`;
+                    weekGrid.appendChild(corner);
+
+                    for(let d=0; d<7; d++){
+                        const dh = document.createElement('div');
+                        const target = new Date(monDate); target.setDate(monDate.getDate() + d);
+                        dh.style.cssText = "text-align:center; font-weight:bold; border-bottom:1px solid #ddd; background:#f8fafc; font-family:Arial; height:30px; display:flex; flex-direction:column; justify-content:center;";
+                        dh.innerHTML = `<span style="font-size:7px; color:#64748b;">${dayNames[d].substring(0,3)}</span><span style="font-size:9px;">${target.getDate()}</span>`;
+                        weekGrid.appendChild(dh);
+                    }
+
+                    const [nh, nm] = noonTime.split(':').map(Number);
+                    const noonWeight = getAccWeight(nh * 60 + nm);
+                    const noonLinePDF = document.createElement('div');
+                    noonLinePDF.style.cssText = `position:absolute; left:35px; right:0; height:1.5px; background-color:#fbbf24; z-index:40; top:calc(30px + (100% - 30px) * (${noonWeight / totalWeight})); pointer-events:none;`;
+                    weekGrid.appendChild(noonLinePDF);
+
+                    for (let h = 0; h < 24; h++) {
+                        ['00', '30'].forEach(min => {
+                            const time = `${h.toString().padStart(2, '0')}:${min}`;
+                            const label = document.createElement('div');
+                            // CORRECCIÓN: Fondo blanco y sin línea horizontal en la columna de horas
+                            label.style.cssText = "position:relative; border-right:1px solid #eee; border-bottom:none; background:#fff; height:100%; overflow:visible;";
+                            
+                            if(min === '00') {
+                                label.innerHTML = `
+                                    <div style="position:absolute; width:35px; top:0; right:0; height:0; overflow:visible; z-index:50;">
+                                        <div style="text-align:right; padding-right:3px; background:white; display:inline-block; float:right;">
+                                            <span style="position:relative; top:-8px; font-size:7.5px; font-weight:700; color:#1e293b; font-family:Arial; line-height:1; display:block;">${time}</span>
+                                        </div>
+                                    </div>`;
+                            }
+                            weekGrid.appendChild(label);
+
+                            for(let d=0; d<7; d++){
+                                const target = new Date(monDate); target.setDate(monDate.getDate() + d);
+                                const iso = formatISODate(target);
+                                const cell = document.createElement('div');
+                                const active = selectedSlots.has(`c-${iso}-${time}`);
+                                const night = h < 7 || h >= 22;
+                                cell.style.cssText = `border-right:1px solid #f1f5f9; border-bottom:1px solid #f1f5f9; background-color:${active ? (night ? '#14532d' : '#16a34a') : (night ? '#e2e8f0' : '#fff')};`;
+                                weekGrid.appendChild(cell);
+                            }
+                        });
+                    }
+                    
+                    weekBlock.appendChild(weekGrid);
+                    page.appendChild(weekBlock);
                 }
 
-                // Cálculo manual en Píxeles para la línea de mediodía del PDF
-                const [nh, nm] = noonTime.split(':').map(Number);
-                const totalMinutesInDay = 1440;
-                const totalMinutesNoon = nh * 60 + nm;
-                const gridContentHeight = 100; // Porcentaje del grid ocupado por filas de horas
-                const noonLinePDF = document.createElement('div');
-                // Posición relativa: 40px es el header, luego viene el 100% de las 48 filas
-                noonLinePDF.style.cssText = `position:absolute; left:45px; right:0; height:2px; background-color:#fbbf24; z-index:40; top:calc(40px + (100% - 40px) * (${totalMinutesNoon / totalMinutesInDay})); pointer-events:none; border-bottom:1px solid rgba(0,0,0,0.1);`;
-                weekGrid.appendChild(noonLinePDF);
-
-                for (let h = 0; h < 24; h++) {
-                    ['00', '30'].forEach(min => {
-                        const time = `${h.toString().padStart(2, '0')}:${min}`;
-                        const label = document.createElement('div');
-                        label.style.cssText = "position:relative; border-right:1px solid #eee; border-bottom:1px solid #fdfdfd; background:#fff; height:100%; overflow:visible;";
-                        
-                        if(min === '00') {
-                            // Ajuste: bajamos 4px el centro para que flote sobre la línea sin recortarse arriba
-                            label.innerHTML = `
-                                <div style="position:absolute; width:45px; top:0; right:0; height:0; overflow:visible; z-index:50;">
-                                    <div style="margin-top:-6px; text-align:right; padding-right:5px; background:white; display:inline-block; float:right;">
-                                        <span style="font-size:9px; font-weight:700; color:#1e293b; font-family:Arial; line-height:12px;">${time}</span>
-                                    </div>
-                                </div>`;
-                        }
-                        weekGrid.appendChild(label);
-
-                        for(let d=0; d<7; d++){
-                            const target = new Date(monDate); target.setDate(monDate.getDate() + d);
-                            const iso = formatISODate(target);
-                            const cell = document.createElement('div');
-                            const active = selectedSlots.has(`c-${iso}-${time}`);
-                            const night = h < 7 || h >= 22;
-                            cell.style.cssText = `border-right:1px solid #f1f5f9; border-bottom:1px solid #f1f5f9; background-color:${active ? (night ? '#14532d' : '#16a34a') : (night ? '#e2e8f0' : '#fff')};`;
-                            weekGrid.appendChild(cell);
-                        }
-                    });
-                }
-                
-                page.appendChild(weekGrid);
                 pdfArea.appendChild(page);
-                const canvas = await html2canvas(page, { scale: 2, useCORS: true, logging: false, windowWidth: 1000 });
+                const canvas = await html2canvas(page, { scale: 3, useCORS: true, logging: false });
                 doc.addPage();
                 doc.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 210, 297);
                 pdfArea.innerHTML = '';
